@@ -4,18 +4,19 @@ import (
 	"errors"
 	"impact5-backend/internal/database"
 	"impact5-backend/internal/models"
+	"time"
 	
 	"gorm.io/gorm"
 )
 
-func AddScore(userID string, value int) (*models.Score, error) {
+func AddScore(userID string, value int, playedAt time.Time) (*models.Score, error) {
 	if value < 1 || value > 45 {
 		return nil, errors.New("score value must be between 1 and 45")
 	}
 
 	var newScore *models.Score
 
-	// Execute within a single transaction to maintain atomic safety
+	// Execute within a single transaction to maintain atomic safety (05 Score Bounds)
 	err := database.DB.Transaction(func(tx *gorm.DB) error {
 		// 1. Count existing
 		var count int64
@@ -35,10 +36,11 @@ func AddScore(userID string, value int) (*models.Score, error) {
 			}
 		}
 
-		// 3. Insert new score
+		// 3. Insert new authentic score explicitly retaining valid time
 		score := models.Score{
 			UserID:   userID,
-			Value:    value, // PlayedAt defaults to now in handler if not provided
+			Value:    value, 
+			PlayedAt: playedAt,
 		}
 
 		if err := tx.Create(&score).Error; err != nil {

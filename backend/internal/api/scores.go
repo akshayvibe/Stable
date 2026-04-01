@@ -5,6 +5,7 @@ import (
 	"impact5-backend/internal/models"
 	"impact5-backend/internal/services"
 	"strconv"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -14,14 +15,28 @@ func AddScore(c *fiber.Ctx) error {
 	userID := c.Locals("user_id").(string)
 
 	type input struct {
-		Value int `json:"value"`
+		Value    int    `json:"value"`
+		PlayedAt string `json:"played_at"` // Added explicit date mapping
 	}
 	var body input
 	if err := c.BodyParser(&body); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid parsing", "details": err.Error()})
 	}
 
-	score, err := services.AddScore(userID, body.Value)
+	// Parse date, fallback to now natively if missing
+	var playedAt time.Time
+	if body.PlayedAt != "" {
+		parsed, err := time.Parse(time.RFC3339, body.PlayedAt)
+		if err == nil {
+			playedAt = parsed
+		} else {
+			playedAt = time.Now()
+		}
+	} else {
+		playedAt = time.Now()
+	}
+
+	score, err := services.AddScore(userID, body.Value, playedAt)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}

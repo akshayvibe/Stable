@@ -3,6 +3,8 @@ package main
 import (
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"impact5-backend/internal/api"
 	"impact5-backend/internal/database"
@@ -16,8 +18,15 @@ import (
 )
 
 func main() {
+	log.Println("[INFO] ==============================================")
+	log.Println("[INFO] Starting Impact5 Backend Server Pipeline...")
+	log.Println("[INFO] ==============================================")
 	if err := godotenv.Load(); err != nil {
-		log.Println("No .env file found, relying on system env variables")
+		if err := godotenv.Load("../../.env"); err != nil {
+			log.Println("[WARN] No .env file found locally, falling back to system environment variables.")
+		}
+	} else {
+		log.Println("[INFO] Environment variables loaded successfully.")
 	}
 
 	// 1. Connect DB and Migrate schemas
@@ -25,16 +34,26 @@ func main() {
 	database.Migrate()
 
 	// 2. Setup Supabase Client
+	log.Println("[INFO] Setting up Supabase client connections...")
 	supaURL := os.Getenv("SUPABASE_URL")
 	supaKey := os.Getenv("SUPABASE_SERVICE_ROLE_KEY")
+	if supaKey == "" {
+		supaKey = os.Getenv("SUPABASE_ANON_KEY")
+	}
 	supaJWT := os.Getenv("SUPABASE_JWT_SECRET")
+	if supaJWT == "" {
+		supaJWT = os.Getenv("JWT_SECRET")
+	}
 
 	client, err := supabase.NewClient(supaURL, supaKey, nil)
 	if err != nil {
-		log.Fatal("Failed to initialize Supabase client: ", err)
+		log.Fatalf("[ERROR] Failed to initialize Supabase client: %v", err)
 	}
+	log.Println("[INFO] Supabase client initialized natively.")
 
-	app := fiber.New()
+	app := fiber.New(fiber.Config{
+		DisableStartupMessage: true, // We are handling our own production logs
+	})
 	app.Use(logger.New())
 	app.Use(cors.New())
 
@@ -116,9 +135,10 @@ func main() {
 
 	// Draws Admin
 	admin.Post("/draws", api.CreateDraw)
-	admin.Post("/draws/:id/simulate", api.SimulateDrawAdmin)
-	admin.Post("/draws/:id/run", api.ExecuteDrawAdmin)
+	admin.Get("/draws/simulate", api.SimulateDrawAdmin)   // GET ?logic=random|algorithmic
+	admin.Post("/draws/execute", api.ExecuteDrawAdmin)    // POST ?logic=random|algorithmic
 	admin.Post("/draws/:id/publish", api.PublishDrawAdmin)
+	admin.Get("/draws/stats", api.AdminDrawStats)
 	
 	// Charities Admin
 	admin.Post("/charities", api.AddCharity)
@@ -134,11 +154,29 @@ func main() {
 	admin.Get("/stats", api.AdminStats)
 	admin.Get("/reports/subscriptions", api.AdminSubscriptionReports)
 	admin.Get("/reports/charity", api.AdminCharityReports)
+	admin.Get("/reports/draws", api.AdminDrawStats)
 
 
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
-	log.Fatal(app.Listen(":" + port))
+
+	// Graceful Shutdown Channel
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+
+	go func() {
+		<-c
+		log.Println("[INFO] Received termination signal. Gracefully shutting down the server...")
+		if err := app.Shutdown(); err != nil {
+			log.Fatalf("[ERROR] Server Shutdown Failed: %v", err)
+		}
+		log.Println("[INFO] Backend server was successfully stopped. Goodbye!")
+	}()
+
+	log.Printf("[INFO] Pre-flight checks passed. Impact5 backend is now natively running on port %s\n", port)
+	if err := app.Listen(":" + port); err != nil {
+		log.Fatalf("[ERROR] Fiber Server failed to launch: %v", err)
+	}
 }

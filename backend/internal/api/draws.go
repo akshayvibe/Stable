@@ -24,34 +24,51 @@ func GetDraw(c *fiber.Ctx) error {
 }
 
 func GetCurrentDrawInfo(c *fiber.Ctx) error {
-	// E.g., simulate based on active subscriptions right now
 	var count int64
 	database.DB.Model(&models.Subscription{}).Where("status = ?", "active").Count(&count)
 
-	sim := services.SimulateDraw(float64(count) * 20.0) // Assume $20 sub
-	return c.JSON(sim)
+	jackpot, tier2, tier3 := services.DrawPoolPreview(int(count))
+
+	sim := services.SimulateDraw(float64(count)*services.SubscriptionFee, "random")
+	sim.JackpotPool = jackpot
+	sim.Tier2Pool = tier2
+	sim.Tier3Pool = tier3
+
+	return c.JSON(fiber.Map{
+		"draw":            sim,
+		"active_subs":     count,
+		"jackpot_pool":    jackpot,
+		"tier2_pool":      tier2,
+		"tier3_pool":      tier3,
+		"total_pool":      float64(count) * services.SubscriptionFee,
+		"winning_numbers": sim.WinningNumbers,
+		"draw_date":       sim.DrawDate,
+	})
 }
+
 
 // --- ADMIN ROUTES ---
 
 func CreateDraw(c *fiber.Ctx) error {
-	// Standard empty creation
 	draw := models.Draw{}
 	database.DB.Create(&draw)
 	return c.JSON(draw)
 }
 
 func SimulateDrawAdmin(c *fiber.Ctx) error {
-	// ... retrieve active subscriptions
-	sim := services.SimulateDraw(1000.0) // mockup pool
+	// Parse logic flag e.g. /api/admin/draws/simulate?logic=algorithmic
+	logic := c.Query("logic", "random")
+	sim := services.SimulateDraw(1000.0, logic)
 	return c.JSON(sim)
 }
 
 func ExecuteDrawAdmin(c *fiber.Ctx) error {
 	var count int64
 	database.DB.Model(&models.Subscription{}).Where("status = ?", "active").Count(&count)
+	
+	logic := c.Query("logic", "random")
 
-	draw, err := services.ExecuteDraw(int(count), 20.0) // $20 sub rate assumption
+	draw, err := services.ExecuteDraw(int(count), 20.0, logic)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}

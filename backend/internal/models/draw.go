@@ -3,18 +3,17 @@ package models
 import (
 	"time"
 	"gorm.io/gorm"
+	"github.com/lib/pq"
 )
 
 type Draw struct {
 	ID          uint           `gorm:"primaryKey" json:"id"`
 	DrawDate    time.Time      `gorm:"not null" json:"draw_date"`
 	TotalPool   float64        `gorm:"not null;default:0" json:"total_pool"`
-	// The 5 winning numbers
-	Num1        int            `json:"num_1"`
-	Num2        int            `json:"num_2"`
-	Num3        int            `json:"num_3"`
-	Num4        int            `json:"num_4"`
-	Num5        int            `json:"num_5"`
+	
+	// Math logic: natively hold drawing array
+	WinningNumbers pq.Int64Array `gorm:"type:integer[]" json:"winning_numbers"`
+	
 	Status      string         `gorm:"default:'pending'" json:"status"` // pending, drawn, published
 	JackpotWon  bool           `gorm:"default:false" json:"jackpot_won"`
 	

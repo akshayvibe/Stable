@@ -4,8 +4,8 @@ go 1.25.4
 
 require (
 	github.com/gofiber/fiber/v2 v2.52.12
-	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/joho/godotenv v1.5.1
+	github.com/lib/pq v1.12.1
 	github.com/supabase-community/gotrue-go v1.2.1
 	github.com/supabase-community/supabase-go v0.0.4
 	gorm.io/driver/postgres v1.6.0

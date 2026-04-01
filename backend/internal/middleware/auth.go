@@ -1,11 +1,12 @@
 package middleware
 
 import (
-	"fmt"
+	"encoding/json"
+	"net/http"
+	"os"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/golang-jwt/jwt/v5"
 )
 
 func Protected(supabaseJWTSecret string) fiber.Handler {
@@ -17,23 +18,27 @@ func Protected(supabaseJWTSecret string) fiber.Handler {
 
 		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
 
-		token, err := jwt.Parse(tokenString, func(t *jwt.Token) (interface{}, error) {
-			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
-				return nil, fmt.Errorf("unexpected signing method")
-			}
-			return []byte(supabaseJWTSecret), nil
-		})
+		// Native Supabase API Validation bypassing local `.env` secret mismatch
+		supaURL := os.Getenv("SUPABASE_URL")
+		req, _ := http.NewRequest("GET", supaURL+"/auth/v1/user", nil)
+		req.Header.Set("Authorization", "Bearer "+tokenString)
+		req.Header.Set("apikey", os.Getenv("SUPABASE_ANON_KEY"))
 
-		if err != nil || !token.Valid {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Invalid token", "details": err.Error()})
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		if err != nil || resp.StatusCode != 200 {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Invalid token remotely mapped"})
+		}
+		defer resp.Body.Close()
+
+		var supaUser struct {
+			ID string `json:"id"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&supaUser); err != nil {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Failed to decode robust token response"})
 		}
 
-		claims, ok := token.Claims.(jwt.MapClaims)
-		if !ok {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Invalid claims"})
-		}
-
-		c.Locals("user_id", claims["sub"]) // typical Supabase JWT layout maps user ID to 'sub'
+		c.Locals("user_id", supaUser.ID)
 		
 		return c.Next()
 	}
